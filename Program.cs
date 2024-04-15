@@ -50,7 +50,7 @@ namespace TecieTwitter
         private static async void ServerThread()
         {
             NamedPipeServerStream pipeServer =
-                new NamedPipeServerStream("TecieTelegramPipe", PipeDirection.InOut, numThreads);
+                new NamedPipeServerStream("TecieTwitterPipe", PipeDirection.InOut, numThreads);
 
             int threadId = Thread.CurrentThread.ManagedThreadId;
 
