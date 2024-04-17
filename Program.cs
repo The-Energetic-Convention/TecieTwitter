@@ -2,6 +2,10 @@
 using Newtonsoft.Json;
 using System.IO.Pipes;
 using System.Text;
+using System.Net.Http.Headers;
+using RestSharp;
+using RestSharp.Authenticators;
+using RestSharp.Authenticators.OAuth;
 
 namespace TecieTwitter
 {
@@ -16,6 +20,7 @@ namespace TecieTwitter
         {
             //start up the bot
             client = new TwitterClient(Environment.GetEnvironmentVariable("TwitterKey"), Environment.GetEnvironmentVariable("TwitterSecret"), Environment.GetEnvironmentVariable("TwitterAccess"), Environment.GetEnvironmentVariable("TwitterAccessKey"));
+            var user = client.Users.GetAuthenticatedUserAsync().Result;
 
             //start up the named pipe for updates
             int i;
@@ -47,6 +52,37 @@ namespace TecieTwitter
             Console.WriteLine("\nServer threads exhausted, exiting.");
         }
 
+        private static async Task PublishTweet(string message)
+        {
+            var clientHandler = new HttpClientHandler
+            {
+                UseCookies = false,
+            };
+            var httpclient = new HttpClient(clientHandler);
+            var request = new HttpRequestMessage
+            {
+                Method = HttpMethod.Post,
+                RequestUri = new Uri("https://api.twitter.com/2/tweets"),
+                Headers =
+                {
+                    { "Authorization", $"OAuth oauth_consumer_key=\"{client.Credentials.ConsumerKey}\", oauth_nonce=\"VIPcj9DZeJBOZkCIcw7rLUA8oGSyWgiX\", oauth_signature=\"0OWFjqgoL4eoOsnyHMbup2nQkE0%3D\", oauth_signature_method=\"HMAC-SHA1\", oauth_timestamp=\"1713321971\", oauth_token=\"{client.Credentials.AccessToken}\", oauth_version=\"1.0\"" },
+                },
+                Content = new StringContent($"{{\n\t\"text\" : \"{message}\"\n}}")
+                {
+                    Headers =
+                    {
+                        ContentType = new MediaTypeHeaderValue("application/json")
+                    }
+                }
+            };
+            using (var response = await httpclient.SendAsync(request))
+            {
+                response.EnsureSuccessStatusCode();
+                var body = await response.Content.ReadAsStringAsync();
+                Console.WriteLine(body);
+            }
+        }
+
         private static async void ServerThread()
         {
             NamedPipeServerStream pipeServer =
@@ -62,7 +98,6 @@ namespace TecieTwitter
             {
                 // Read the request from the client. Once the client has
                 // written to the pipe its security token will be available.
-
                 StreamString ss = new StreamString(pipeServer);
                 string authkey = Environment.GetEnvironmentVariable("TECKEY") ?? "no key found";
 
@@ -80,19 +115,19 @@ namespace TecieTwitter
                 {
                     case "A":
                         post = message;
-                        await client.Tweets.PublishTweetAsync(post);
+                        PublishTweet(post).Wait();
                         ss.WriteString("SUCCESS");
                         break;
                     case "E":
                         EventPingInfo eventinfo = JsonConvert.DeserializeObject<EventPingInfo>(message)!;
                         Console.WriteLine(JsonConvert.SerializeObject(eventinfo, Formatting.Indented));
                         post = $"An event is starting!\n\n{eventinfo.EventName}\n\n{(eventinfo.EventLink != null ? $"Join Here! {eventinfo.EventLink}\nSee the current event here: https://thenergeticon.com/Events/currentevent" : "See the current event here: https://thenergeticon.com/Events/currentevent")}";
-                        await client.Tweets.PublishTweetAsync(post);
+                        PublishTweet(post).Wait();
                         ss.WriteString("SUCCESS");
                         break;
                     case "U":
                         post = $"Update: {message}";
-                        await client.Tweets.PublishTweetAsync(post);
+                        PublishTweet(post).Wait();
                         ss.WriteString("SUCCESS");
                         break;
                     default:
